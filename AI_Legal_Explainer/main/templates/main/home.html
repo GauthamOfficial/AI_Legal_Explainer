@@ -354,6 +354,9 @@
                                 </div>
                             </div>
                             <div class="col-md-4">
+                                <!-- CSRF Token for chat functionality -->
+                                {% csrf_token %}
+                                
                                 <div class="mb-3">
                                     <label for="chatDocument" class="form-label">Select Document</label>
                                     <select class="form-select" id="chatDocument">
@@ -689,31 +692,74 @@
                 return;
             }
             
+            // Get CSRF token
+            let csrfToken = '';
+            const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (csrfElement) {
+                csrfToken = csrfElement.value;
+            } else {
+                csrfToken = getCookie('csrftoken');
+            }
+            
+            if (!csrfToken) {
+                alert('CSRF token not found. Please refresh the page and try again.');
+                return;
+            }
+            
             try {
+                console.log('=== CHAT DEBUG START ===');
+                console.log('Sending question:', { question, documentId, sessionId: currentSessionId });
+                console.log('CSRF Token:', csrfToken ? 'Present' : 'Missing');
+                
+                const requestBody = {
+                    question: question,
+                    document_id: documentId,
+                };
+                if (currentSessionId) {
+                    requestBody.session_id = currentSessionId;
+                }
+                console.log('Request body:', requestBody);
+                
                 const response = await fetch('/api/chat/ask/', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
                     },
-                    body: JSON.stringify({
-                        question: question,
-                        document_id: documentId,
-                        session_id: currentSessionId
-                    })
+                    body: JSON.stringify(requestBody)
                 });
                 
-                const result = await response.json();
+                console.log('Response status:', response.status);
+                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+                
+                let result;
+                try {
+                    result = await response.json();
+                    console.log('Response result:', result);
+                } catch (parseError) {
+                    console.error('Failed to parse response as JSON:', parseError);
+                    const textResponse = await response.text();
+                    console.log('Raw response text:', textResponse);
+                    throw new Error('Invalid response format from server');
+                }
                 
                 if (response.ok) {
+                    console.log('Success! Adding messages to chat...');
                     currentSessionId = result.session_id;
                     addChatMessage('user', question);
                     addChatMessage('assistant', result.answer, result.confidence_score, result.sources);
                     document.getElementById('chatQuestion').value = '';
+                    console.log('=== CHAT DEBUG END (SUCCESS) ===');
                 } else {
-                    throw new Error(result.error || 'Failed to get answer');
+                    console.error('Server returned error status:', response.status);
+                    console.error('Error details:', result);
+                    const errorMessage = result.error || result.details || 'Failed to get answer';
+                    throw new Error(errorMessage);
                 }
             } catch (error) {
+                console.error('=== CHAT DEBUG END (ERROR) ===');
                 console.error('Chat error:', error);
+                console.error('Error stack:', error.stack);
                 alert('Failed to get answer: ' + error.message);
             }
         }

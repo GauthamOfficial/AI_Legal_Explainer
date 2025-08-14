@@ -361,14 +361,31 @@ class ChatViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['post'])
     def ask_question(self, request):
         """Ask a question about a document"""
+        logger.info(f"=== CHAT DEBUG START ===")
+        logger.info(f"Request data: {request.data}")
+        logger.info(f"Request headers: {dict(request.headers)}")
+        
         serializer = ChatRequestSerializer(data=request.data)
         if serializer.is_valid():
             question = serializer.validated_data['question']
+            document_id = serializer.validated_data['document_id']
             session_id = serializer.validated_data.get('session_id')
-            document_id = request.data.get('document_id')
+            
+            logger.info(f"Validated data - Question: {question}, Document ID: {document_id}, Session ID: {session_id}")
             
             try:
                 document = Document.objects.get(id=document_id)
+                logger.info(f"Found document: {document.title} (ID: {document.id})")
+                logger.info(f"Document processed: {document.is_processed}")
+                logger.info(f"Document has original text: {bool(document.original_text)}")
+                logger.info(f"Document has processed text: {bool(document.processed_text)}")
+                
+                # Check if document is processed
+                if not document.is_processed:
+                    logger.warning(f"Document {document.id} is not processed")
+                    return Response({
+                        'error': 'Document is not yet processed. Please wait for processing to complete or try again later.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
                 
                 # Get or create chat session
                 if session_id:
@@ -376,12 +393,14 @@ class ChatViewSet(viewsets.ViewSet):
                         session_id=session_id,
                         document=document
                     )
+                    logger.info(f"Using existing chat session: {session_id} (created: {created})")
                 else:
                     session_id = str(uuid.uuid4())
                     chat_session = ChatSession.objects.create(
                         session_id=session_id,
                         document=document
                     )
+                    logger.info(f"Created new chat session: {session_id}")
                 
                 # Create user message
                 ChatMessage.objects.create(
@@ -389,15 +408,28 @@ class ChatViewSet(viewsets.ViewSet):
                     message_type='user',
                     content=question
                 )
+                logger.info(f"Created user message for question: {question[:50]}...")
                 
                 # Generate AI answer
                 chat_service = ChatService()
                 document_context = document.processed_text or document.original_text
-                clauses = list(document.clauses.all().values())
                 
+                # Check if document has content
+                if not document_context:
+                    logger.error(f"Document {document.id} has no content")
+                    return Response({
+                        'error': 'Document has no content to analyze. Please ensure the document has been properly processed.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                logger.info(f"Document context length: {len(document_context)}")
+                clauses = list(document.clauses.all().values())
+                logger.info(f"Found {len(clauses)} clauses")
+                
+                logger.info("Calling ChatService.generate_answer...")
                 answer_data = chat_service.generate_answer(
                     question, document_context, clauses
                 )
+                logger.info(f"ChatService returned: {answer_data}")
                 
                 # Create AI message
                 ChatMessage.objects.create(
@@ -407,7 +439,9 @@ class ChatViewSet(viewsets.ViewSet):
                     confidence_score=answer_data['confidence_score'],
                     sources=answer_data['sources']
                 )
+                logger.info("Created AI message successfully")
                 
+                logger.info("=== CHAT DEBUG END (SUCCESS) ===")
                 return Response({
                     'answer': answer_data['answer'],
                     'confidence_score': answer_data['confidence_score'],
@@ -416,16 +450,21 @@ class ChatViewSet(viewsets.ViewSet):
                 })
                 
             except Document.DoesNotExist:
+                logger.error(f"Document not found: {document_id}")
                 return Response({
                     'error': 'Document not found'
                 }, status=status.HTTP_404_NOT_FOUND)
             except Exception as e:
+                logger.error(f"=== CHAT DEBUG END (ERROR) ===")
                 logger.error(f"Error in chat: {str(e)}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 return Response({
                     'error': 'Failed to process question',
                     'details': str(e)
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
+            logger.error(f"Serializer errors: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=False, methods=['get'])

@@ -140,7 +140,13 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
 class ChatRequestSerializer(serializers.Serializer):
     """Serializer for chat requests"""
     question = serializers.CharField(max_length=1000)
-    session_id = serializers.CharField(max_length=100, required=False)
+    document_id = serializers.UUIDField()
+    session_id = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+    )
 
 class ChatResponseSerializer(serializers.Serializer):
     """Serializer for chat responses"""

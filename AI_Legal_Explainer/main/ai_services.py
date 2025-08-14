@@ -510,24 +510,56 @@ class ChatService:
     
     def generate_answer(self, question: str, document_context: str, clauses: List[Dict] = None) -> Dict:
         """Generate answer to user question about the document"""
+        logger.info(f"=== ChatService.generate_answer START ===")
+        logger.info(f"Question: {question}")
+        logger.info(f"Document context length: {len(document_context) if document_context else 0}")
+        logger.info(f"Clauses count: {len(clauses) if clauses else 0}")
+        
         try:
+            # Validate inputs
+            if not question or not question.strip():
+                raise ValueError("Question cannot be empty")
+            
+            if not document_context or not document_context.strip():
+                raise ValueError("Document context cannot be empty")
+            
+            logger.info("Input validation passed")
+            
             # Use basic text analysis to generate answers
+            logger.info("Calling _generate_basic_answer...")
+            logger.info(f"Document context preview: {document_context[:200] if document_context else 'None'}...")
+            logger.info(f"Clauses preview: {clauses[:2] if clauses else 'None'}...")
             answer = self._generate_basic_answer(question, document_context, clauses)
+            logger.info(f"Generated answer: {answer[:100]}...")
             
             # Calculate confidence (simplified)
+            logger.info("Calculating confidence...")
             confidence_score = self._calculate_confidence(answer, question, document_context)
+            logger.info(f"Confidence score: {confidence_score}")
             
             # Extract sources
+            logger.info("Extracting sources...")
             sources = self._extract_sources(answer, clauses)
+            logger.info(f"Sources: {sources}")
             
-            return {
+            result = {
                 'answer': answer,
                 'confidence_score': confidence_score,
                 'sources': sources
             }
             
+            logger.info(f"=== ChatService.generate_answer END (SUCCESS) ===")
+            logger.info(f"Returning result: {result}")
+            return result
+            
         except Exception as e:
+            logger.error(f"=== ChatService.generate_answer END (ERROR) ===")
             logger.error(f"Error generating answer: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Question: {question}")
+            logger.error(f"Document context length: {len(document_context) if document_context else 0}")
+            logger.error(f"Clauses count: {len(clauses) if clauses else 0}")
             return self._fallback_answer(question)
     
     def _generate_basic_answer(self, question: str, document_context: str, clauses: List[Dict] = None) -> str:
@@ -565,7 +597,13 @@ class ChatService:
         if clauses:
             clause_info = []
             for clause in clauses[:5]:  # Limit to 5 most relevant clauses
-                clause_info.append(f"Clause ({clause['clause_type']}): {clause['original_text'][:200]}...")
+                try:
+                    clause_type = clause.get('clause_type', 'unknown')
+                    original_text = clause.get('original_text', 'No text available')
+                    clause_info.append(f"Clause ({clause_type}): {original_text[:200]}...")
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"Error accessing clause data in _prepare_context: {e}")
+                    continue
             
             context += f"\n\nKey clauses: {' '.join(clause_info)}"
         
@@ -597,8 +635,13 @@ class ChatService:
         if clauses:
             # Look for clause references in the answer
             for clause in clauses:
-                if clause['clause_type'] in answer.lower():
-                    sources.append(f"Clause: {clause['clause_type']}")
+                try:
+                    clause_type = clause.get('clause_type', 'unknown')
+                    if clause_type and clause_type in answer.lower():
+                        sources.append(f"Clause: {clause_type}")
+                except (KeyError, TypeError) as e:
+                    logger.warning(f"Error accessing clause data: {e}")
+                    continue
         
         if not sources:
             sources.append("Document content")
