@@ -5,7 +5,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth import login, authenticate
+from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.models import User
 from django.contrib import messages
 from rest_framework import viewsets, status
@@ -938,3 +938,10 @@ def test_upload_page(request):
         return HttpResponse(content, content_type='text/html')
     else:
         return HttpResponse('Test upload page not found. Please check the file path.', status=404)
+
+def logout_view(request):
+    """Custom logout view that handles both GET and POST requests"""
+    if request.user.is_authenticated:
+        logout(request)
+        messages.success(request, 'You have been successfully logged out.')
+    return redirect('main:welcome')
